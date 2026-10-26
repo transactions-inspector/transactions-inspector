@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="page-header">
+  <div>
+    <h2 class="page-title">System Dashboard</h2>
+    <p class="page-subtitle">Real-time financial crime investigation & network analysis.</p>
+  </div>
+</div>
+
+<!-- Top Stat Cards -->
+<div class="stats-grid">
+  <div class="stat-card">
+    <div class="stat-icon red"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 9v4"/><path d="m12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg></div>
+    <div class="stat-info">
+      <div class="stat-title">Total Alerts</div>
+      <div class="stat-value">{{ findings|length }}</div>
+      <div class="stat-desc text-red">Requires attention</div>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg></div>
+    <div class="stat-info">
+      <div class="stat-title">Safe Transactions</div>
+      <div class="stat-value">{{ transactions|length - findings|length }}</div>
+      <div class="stat-desc text-green">No threats detected</div>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg></div>
+    <div class="stat-info">
+      <div class="stat-title">Monitored Accounts</div>
+      <div class="stat-value">{{ graph_elements|length - transactions|length }}</div>
+      <div class="stat-desc">System active</div>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon cyan"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
+    <div class="stat-info">
+      <div class="stat-title">Total Volume</div>
+      <div class="stat-value">₹{{ "{:,.0f}".format(transactions|sum(attribute='amount')) }}</div>
+      <div class="stat-desc">All time</div>
+    </div>
+  </div>
+</div>
+
+<!-- Charts Row -->
+<div class="charts-grid">
+  <!-- Bar Chart -->
+  <div class="card">
+    <div class="card-header">Transaction Activity (Last 7 Days)</div>
+    <div class="chart-container">
+      <canvas id="barChart"></canvas>
+    </div>
+  </div>
+
+  <!-- Pie Chart -->
+  <div class="card">
+    <div class="card-header">Risk Distribution</div>
+    <div class="chart-container pie-container">
+      <canvas id="pieChart"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- Safely pass Jinja variables to JS -->
+<script>
+  const largeAmountCount = Number("{{ rule_counts.get('large_amount', 0) }}");
+  const rapidRepeatCount = Number("{{ rule_counts.get('rapid_repeat', 0) }}");
+  const circularPairCount = Number("{{ rule_counts.get('circular_pair', 0) }}");
+  const safeCount = Number("{{ transactions|length - findings|length }}");
+
+  document.addEventListener("DOMContentLoaded", function() {
+    // Bar Chart
+    const ctxBar = document.getElementById('barChart').getContext('2d');
+    new Chart(ctxBar, {
+      type: 'bar',
+      data: {
+        labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+        datasets: [{
+          label: 'Transactions',
+          data: [12, 19, 15, 25, 22, 30, 18], // Dummy trend data
+          backgroundColor: 'rgba(59, 130, 246, 0.6)',
+          borderColor: '#3b82f6',
+          borderWidth: 1,
+          borderRadius: 4
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          y: { beginAtZero: true, grid: { color: '#1f2937' }, ticks: { color: '#94a3b8' } },
+          x: { grid: { display: false }, ticks: { color: '#94a3b8' } }
+        }
+      }
+    });
+
+    // Pie Chart
+    const ctxPie = document.getElementById('pieChart').getContext('2d');
+    new Chart(ctxPie, {
+      type: 'doughnut',
+      data: {
+        labels: ['Large Amount', 'Rapid Repeats', 'Circular Pairs', 'Safe'],
+        datasets: [{
+          data: [largeAmountCount, rapidRepeatCount, circularPairCount, safeCount],
+          backgroundColor: ['#ef4444', '#f59e0b', '#8b5cf6', '#10b981'],
+          borderWidth: 0
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: '70%',
+        plugins: {
+          legend: { position: 'right', labels: { color: '#e2e8f0', padding: 20 } }
+        }
+      }
+    });
+  });
+</script>
+{% endblock %}

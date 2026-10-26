@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="investigate-grid">
+  <!-- Left Sidebar (Form) -->
+  <div class="sidebar-col">
+    <div class="card">
+      <div class="card-header"><span class="dot dot-blue"></span> New Transaction</div>
+      <form class="tx-form" action="/add" method="POST">
+        <div class="form-group"><label>Sender</label><input type="text" name="sender" placeholder="ACC-1001" required></div>
+        <div class="form-group"><label>Receiver</label><input type="text" name="receiver" placeholder="ACC-1002" required></div>
+        <div class="form-row">
+          <div class="form-group"><label>Amount (₹)</label><input type="number" step="0.01" name="amount" placeholder="50000" required></div>
+          <div class="form-group"><label>Type</label><select name="tx_type"><option>Transfer</option><option>Deposit</option><option>Withdrawal</option><option>Refund</option></select></div>
+        </div>
+        <div class="form-group"><label>Location</label><input type="text" name="location" placeholder="Delhi"></div>
+        <button type="submit" class="btn-submit">Process Transaction</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Right Main Content (Graph + Table) -->
+  <div class="main-col">
+    <div class="card graph-card">
+      <div class="card-header">
+        <span class="dot dot-cyan"></span> Network Graph
+        <div class="legend"><span><i class="lg blue"></i> Safe</span><span><i class="lg red"></i> Suspicious</span></div>
+      </div>
+      <div class="graph-container">
+        <div id="cy"></div>
+        <div id="graph-info">Click a node to trace 3-hop trail</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><span class="dot dot-amber"></span> Transaction Ledger</div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>ID</th><th>Sender</th><th>Receiver</th><th>Amount</th><th>Type</th><th>Location</th><th>Risk</th></tr>
+          </thead>
+          <tbody>
+            {% for tx in transactions %}
+              {% set risk = risk_by_id[tx.id] %}
+              {% set is_high = risk >= 60 %}
+              {% set is_med = risk >= 30 and risk < 60 %}
+              <tr class="clickable-row {% if tx.id in flagged_ids %}row-flagged{% endif %}"
+                  data-tx-id="{{ tx.id }}" data-sender="{{ tx.sender }}" data-receiver="{{ tx.receiver }}"
+                  data-amount="{{ tx.amount }}" data-type="{{ tx.tx_type }}" data-location="{{ tx.location }}"
+                  data-timestamp="{{ tx.timestamp }}" data-risk="{{ risk }}" data-rules='{{ rule_hits_by_id[tx.id]|tojson }}'>
+                <td class="mono text-dim">#{{ tx.id }}</td>
+                <td class="mono">{{ tx.sender }}</td>
+                <td class="mono">{{ tx.receiver }}</td>
+                <td class="mono amount">₹{{ "{:,.2f}".format(tx.amount) }}</td>
+                <td><span class="tag type-{{ tx.tx_type|lower }}">{{ tx.tx_type }}</span></td>
+                <td class="mono text-dim">{{ tx.location }}</td>
+                <td>
+                  <div class="risk-container">
+                    <span class="risk-badge {% if is_high %}risk-high{% elif is_med %}risk-med{% else %}risk-low{% endif %}">{{ risk }}%</span>
+                    <div class="risk-bar-bg"><div class="risk-bar-fill {% if is_high %}bg-red{% elif is_med %}bg-amber{% else %}bg-green{% endif %}" style="width: {{ risk }}%;"></div></div>
+                  </div>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal -->
+<div id="modal" class="modal-overlay" onclick="if(event.target===this) closeModal()">
+  <div class="modal-card">
+    <div class="modal-header">
+      <div><h2 class="modal-title">TX #<span id="m-id"></span></h2><div class="modal-sub" id="m-subtitle"></div></div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-risk-panel">
+      <div class="modal-risk-header"><span>THREAT SCORE</span><span id="m-risk-pct" class="modal-risk-val">0%</span></div>
+      <div class="modal-risk-bar"><div id="m-risk-fill" class="modal-risk-fill"></div></div>
+      <div class="modal-rules-list" id="m-rules"></div>
+    </div>
+    <div class="modal-graph-wrap">
+      <div class="modal-graph-title">History Network (2-Hop)</div>
+      <div id="m-cy"></div>
+    </div>
+  </div>
+</div>
+
+<script id="graph-data" type="application/json">{{ graph_elements|tojson }}</script>
+<script id="history-data" type="application/json">{{ history_subgraphs|tojson }}</script>
+
+<script>
+  // --- JS for Graph and Modal (same as before) ---
+  const graphElements = JSON.parse(document.getElementById('graph-data').textContent);
+  const historySubgraphs = JSON.parse(document.getElementById('history-data').textContent);
+
+  const cyStyles = [
+    { selector: 'node', style: {'background-color': '#1e293b', 'border-width': 2, 'border-color': '#334155', 'label': 'data(label)', 'color': '#94a3b8', 'font-family': 'JetBrains Mono', 'font-size': '10px', 'text-valign': 'bottom', 'text-margin-y': 6, 'text-outline-width': 2, 'text-outline-color': '#0b1121'}},
+    { selector: 'node[?flagged]', style: {'border-color': '#ef4444', 'background-color': '#450a0a', 'color': '#fca5a5'}},
+    { selector: 'edge', style: {'width': 1.5, 'line-color': '#334155', 'target-arrow-color': '#334155', 'target-arrow-shape': 'triangle', 'curve-style': 'bezier', 'opacity': 0.6}},
+    { selector: 'edge[?flagged]', style: {'line-color': '#ef4444', 'target-arrow-color': '#ef4444', 'width': 2}},
+    { selector: 'edge[?is_current]', style: {'line-color': '#38bdf8', 'target-arrow-color': '#38bdf8', 'width': 3, 'opacity': 1}},
+    { selector: '.hl-node', style: {'border-color': '#38bdf8', 'border-width': 3, 'shadow-blur': 15, 'shadow-color': '#38bdf8'}},
+    { selector: '.hl-edge', style: {'line-color': '#38bdf8', 'target-arrow-color': '#38bdf8', 'width': 3, 'opacity': 1}},
+    { selector: '.dimmed', style: {'opacity': 0.1}}
+  ];
+
+  const cy = cytoscape({
+    container: document.getElementById('cy'), elements: graphElements, style: cyStyles,
+    layout: { name: 'cose', animate: false, idealEdgeLength: 80, nodeRepulsion: 6000 }
+  });
+
+  const infoEl = document.getElementById('graph-info');
+  cy.on('tap', 'node', function(evt) {
+    const start = evt.target.id();
+    cy.elements().removeClass('hl-node hl-edge dimmed');
+    let visited = new Set([start]), frontier = [start], edges = new Set();
+    for(let i=0; i<3; i++) {
+      let next = [];
+      for(let n of frontier) {
+        cy.edges('[source="'+n+'"]').forEach(e => { let t = e.data('target'); if(!visited.has(t)){visited.add(t);next.push(t);} edges.add(e.id()); });
+        cy.edges('[target="'+n+'"]').forEach(e => { let s = e.data('source'); if(!visited.has(s)){visited.add(s);next.push(s);} edges.add(e.id()); });
+      }
+      frontier = next; if(!frontier.length) break;
+    }
+    cy.nodes().forEach(n => visited.has(n.id()) ? n.addClass('hl-node') : n.addClass('dimmed'));
+    cy.edges().forEach(e => edges.has(e.id()) ? e.addClass('hl-edge') : e.addClass('dimmed'));
+    infoEl.textContent = 'Traced: ' + start + ' (' + visited.size + ' nodes)';
+  });
+  cy.on('tap', function(e) { if(e.target===cy) { cy.elements().removeClass('hl-node hl-edge dimmed'); infoEl.textContent = 'Click a node to trace 3-hop trail'; } });
+
+  let modalCy = null;
+  const RULE_META = { 'large_amount': { l: 'Large Amount', w: '+40%', c: '#ef4444' }, 'rapid_repeat': { l: 'Rapid Repeats', w: '+35%', c: '#f59e0b' }, 'circular_pair': { l: 'Circular Pair', w: '+25%', c: '#8b5cf6' } };
+
+  document.querySelectorAll('.clickable-row').forEach(row => { row.addEventListener('click', () => openModal(row.dataset)); });
+
+  function openModal(data) {
+    const risk = parseInt(data.risk, 10); const rules = JSON.parse(data.rules || '[]');
+    document.getElementById('m-id').textContent = data.txId;
+    document.getElementById('m-subtitle').textContent = data.sender + ' → ' + data.receiver + ' · ₹' + parseFloat(data.amount).toLocaleString('en-IN') + ' · ' + data.type;
+    const pctEl = document.getElementById('m-risk-pct'); pctEl.textContent = risk + '%'; pctEl.style.color = risk >= 60 ? '#ef4444' : risk >= 30 ? '#f59e0b' : '#10b981';
+    const fill = document.getElementById('m-risk-fill'); fill.style.width = risk + '%'; fill.style.background = risk >= 60 ? '#ef4444' : risk >= 30 ? '#f59e0b' : '#10b981';
+    const rulesEl = document.getElementById('m-rules');
+    rulesEl.innerHTML = !rules.length ? '<div class="no-rules">✅ Clean transaction. No rules triggered.</div>' :
+      rules.map(r => { const m = RULE_META[r]; return `<div class="rule-chip" style="border-color:${m.c}"><span style="color:${m.c}">${m.l}</span><span class="rule-w">${m.w}</span></div>`; }).join('');
+    document.getElementById('modal').classList.add('active'); document.body.style.overflow = 'hidden';
+    setTimeout(() => {
+      if(modalCy) modalCy.destroy();
+      modalCy = cytoscape({ container: document.getElementById('m-cy'), elements: historySubgraphs[data.txId] || [], style: cyStyles, layout: { name: 'cose', animate: false, idealEdgeLength: 50, nodeRepulsion: 3000, padding: 20 } });
+    }, 50);
+  }
+  function closeModal() { document.getElementById('modal').classList.remove('active'); document.body.style.overflow = ''; if(modalCy) { modalCy.destroy(); modalCy = null; } }
+  document.addEventListener('keydown', e => { if(e.key==='Escape') closeModal(); });
+</script>
+{% endblock %}

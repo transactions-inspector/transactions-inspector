@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="page-header">
+  <h2 class="page-title">Threat Alerts</h2>
+  <p class="page-subtitle">All transactions flagged by the rule engine.</p>
+</div>
+
+<div class="card">
+  <div class="card-header"><span class="dot dot-red"></span> Flagged Transactions ({{ findings|length }})</div>
+  <div class="findings-list" style="max-height: none;">
+    {% for f in findings %}
+      <div class="finding-item" style="padding: 20px; border-left-width: 4px;">
+        <div class="finding-header">
+          <span class="f-id" style="font-size: 14px;">Transaction #{{ f.transaction_id }}</span>
+          <span class="f-rule" style="font-size: 11px; padding: 4px 8px;">{{ f.rule.replace('_', ' ') }}</span>
+        </div>
+        <div class="f-reason" style="font-size: 14px; margin-top: 8px;">{{ f.reason }}</div>
+      </div>
+    {% else %}
+      <div class="empty-state">No threats detected in the current dataset.</div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}
